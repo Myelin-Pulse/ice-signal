@@ -1,0 +1,13 @@
+[package]
+name = "ice-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Ice Signal local engine: real-time non-verbal audio telemetry. Processes live mic frames, extracts metadata, discards raw audio."
+
+[dependencies]
+cpal = "0.16"
+ctrlc = "3"
+anyhow = "1"
+
+[profile.release]
+lto = true
