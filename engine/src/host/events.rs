@@ -1,14 +1,98 @@
-//! Formats core FrameReports as the JSONL metadata contract in
-//! docs/event-schema.md. This stream (stdout) is the only data that leaves
-//! the engine.
+//! Typed metadata events and their JSONL form (docs/event-schema.md).
 //!
-//! Times are frame-derived (`frame_index * 20 ms`) — monotonic session time,
-//! never wall-clock, per the schema.
+//! The JSONL stream on stdout is the only data that ever leaves the engine.
+//! The analytics layer consumes these same typed events — never frame data —
+//! so everything the app computes is provably derivable from the metadata
+//! contract alone. On hardware, this enum is what crosses the USB/BLE link.
 
 use crate::core::{Band, FrameReport, FRAME_MS};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event {
+    SessionStart,
+    SpeakingStart { t: u64 },
+    SpeakingStop { t: u64, utterance_ms: u64 },
+    Silence { t: u64, since_ms: u64 },
+    LongPause { t: u64, pause_ms: u64 },
+    EnergyLevel { t: u64, band: Band, dbfs: f32 },
+    PrivacySummary { t: u64, frames_processed: u64, audio_samples_discarded: u64 },
+    SessionEnd { t: u64 },
+}
+
+impl Event {
+    pub fn to_json(&self) -> String {
+        match *self {
+            Event::SessionStart => format!(
+                r#"{{"t":0,"event":"SESSION_START","frame_ms":{FRAME_MS},"engine_version":"{}"}}"#,
+                env!("CARGO_PKG_VERSION")
+            ),
+            Event::SpeakingStart { t } => {
+                format!(r#"{{"t":{t},"event":"SPEAKING_START"}}"#)
+            }
+            Event::SpeakingStop { t, utterance_ms } => format!(
+                r#"{{"t":{t},"event":"SPEAKING_STOP","utterance_ms":{utterance_ms}}}"#
+            ),
+            Event::Silence { t, since_ms } => {
+                format!(r#"{{"t":{t},"event":"SILENCE","since_ms":{since_ms}}}"#)
+            }
+            Event::LongPause { t, pause_ms } => {
+                format!(r#"{{"t":{t},"event":"LONG_PAUSE","pause_ms":{pause_ms}}}"#)
+            }
+            Event::EnergyLevel { t, band, dbfs } => format!(
+                r#"{{"t":{t},"event":"ENERGY_LEVEL","band":"{}","dbfs":{dbfs:.1}}}"#,
+                band_str(band)
+            ),
+            Event::PrivacySummary { t, frames_processed, audio_samples_discarded } => format!(
+                r#"{{"t":{t},"event":"PRIVACY_SUMMARY","frames_processed":{frames_processed},"audio_samples_discarded":{audio_samples_discarded},"audio_bytes_persisted":0,"words_transcribed":0}}"#
+            ),
+            Event::SessionEnd { t } => {
+                format!(r#"{{"t":{t},"event":"SESSION_END","duration_ms":{t}}}"#)
+            }
+        }
+    }
+}
+
+fn band_str(band: Band) -> &'static str {
+    match band {
+        Band::Low => "LOW",
+        Band::Med => "MED",
+        Band::High => "HIGH",
+    }
+}
+
 fn ms(frame_index: u64) -> u64 {
     frame_index * FRAME_MS as u64
+}
+
+/// The 0..n schema events triggered by one frame's strobes.
+pub fn from_report(r: &FrameReport) -> Vec<Event> {
+    let t = ms(r.frame_index);
+    let mut events = Vec::new();
+    if r.speaking_start {
+        events.push(Event::SpeakingStart { t });
+    }
+    if r.speaking_stop {
+        events.push(Event::SpeakingStop {
+            t,
+            utterance_ms: r.utterance_frames as u64 * FRAME_MS as u64,
+        });
+    }
+    if r.silence {
+        events.push(Event::Silence {
+            t,
+            since_ms: r.silence_frames as u64 * FRAME_MS as u64,
+        });
+    }
+    if r.long_pause {
+        events.push(Event::LongPause {
+            t,
+            pause_ms: r.silence_frames as u64 * FRAME_MS as u64,
+        });
+    }
+    if let Some((band, avg_power)) = r.energy_band {
+        events.push(Event::EnergyLevel { t, band, dbfs: dbfs(avg_power) });
+    }
+    events
 }
 
 /// Display-side conversion of core frame power back to dBFS.
@@ -19,58 +103,6 @@ pub fn dbfs(frame_power: u32) -> f32 {
     }
     let mean_sq = frame_power as f64 * 256.0 / 320.0;
     (10.0 * (mean_sq / (32768.0f64 * 32768.0)).log10()).max(-90.0) as f32
-}
-
-pub fn session_start() -> String {
-    format!(
-        r#"{{"t":0,"event":"SESSION_START","frame_ms":{FRAME_MS},"engine_version":"{}"}}"#,
-        env!("CARGO_PKG_VERSION")
-    )
-}
-
-/// The 0..n schema events triggered by one frame's strobes.
-pub fn report_lines(r: &FrameReport) -> Vec<String> {
-    let t = ms(r.frame_index);
-    let mut lines = Vec::new();
-    if r.speaking_start {
-        lines.push(format!(r#"{{"t":{t},"event":"SPEAKING_START"}}"#));
-    }
-    if r.speaking_stop {
-        let utterance_ms = r.utterance_frames as u64 * FRAME_MS as u64;
-        lines.push(format!(
-            r#"{{"t":{t},"event":"SPEAKING_STOP","utterance_ms":{utterance_ms}}}"#
-        ));
-    }
-    if r.silence {
-        let since_ms = r.silence_frames as u64 * FRAME_MS as u64;
-        lines.push(format!(r#"{{"t":{t},"event":"SILENCE","since_ms":{since_ms}}}"#));
-    }
-    if r.long_pause {
-        let pause_ms = r.silence_frames as u64 * FRAME_MS as u64;
-        lines.push(format!(r#"{{"t":{t},"event":"LONG_PAUSE","pause_ms":{pause_ms}}}"#));
-    }
-    if let Some((band, avg_power)) = r.energy_band {
-        let band = match band {
-            Band::Low => "LOW",
-            Band::Med => "MED",
-            Band::High => "HIGH",
-        };
-        lines.push(format!(
-            r#"{{"t":{t},"event":"ENERGY_LEVEL","band":"{band}","dbfs":{:.1}}}"#,
-            dbfs(avg_power)
-        ));
-    }
-    lines
-}
-
-pub fn session_end(frames_processed: u64, device_samples_discarded: u64) -> [String; 2] {
-    let t = ms(frames_processed);
-    [
-        format!(
-            r#"{{"t":{t},"event":"PRIVACY_SUMMARY","frames_processed":{frames_processed},"audio_samples_discarded":{device_samples_discarded},"audio_bytes_persisted":0,"words_transcribed":0}}"#
-        ),
-        format!(r#"{{"t":{t},"event":"SESSION_END","duration_ms":{t}}}"#),
-    ]
 }
 
 #[cfg(test)]
@@ -93,9 +125,11 @@ mod tests {
             utterance_frames: 160,
             ..Default::default()
         };
+        let events = from_report(&r);
+        assert_eq!(events, vec![Event::SpeakingStop { t: 12340, utterance_ms: 3200 }]);
         assert_eq!(
-            report_lines(&r),
-            vec![r#"{"t":12340,"event":"SPEAKING_STOP","utterance_ms":3200}"#.to_string()]
+            events[0].to_json(),
+            r#"{"t":12340,"event":"SPEAKING_STOP","utterance_ms":3200}"#
         );
     }
 }

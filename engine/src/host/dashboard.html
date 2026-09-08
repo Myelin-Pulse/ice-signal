@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ice Signal — live session</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page:           #f9f9f7;
+    --surface-1:      #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6;
+    --meter-track:    #cde2fb;
+    --status-good:    #0ca30c;
+    --success-text:   #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page:           #0d0d0d;
+      --surface-1:      #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --meter-track:    #0d366b;
+      --status-good:    #0ca30c;
+      --success-text:   #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page:           #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --meter-track:    #0d366b;
+    --status-good:    #0ca30c;
+    --success-text:   #0ca30c;
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  body.viz-root {
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 20px;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; margin-bottom: 16px;
+  }
+  header h1 { font-size: 17px; font-weight: 650; }
+  header .clock { font-size: 15px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  header .status { margin-left: auto; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+  header .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+  header .status.live .dot { background: var(--status-good); }
+  header .status.live { color: var(--success-text); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 14px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .panel h2 {
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.02em; margin-bottom: 10px;
+  }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .tile .label { font-size: 12px; color: var(--text-muted); }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .value.hero { font-size: 48px; line-height: 1.1; }
+  .tile .sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .meter { height: 6px; border-radius: 3px; background: var(--meter-track); margin-top: 10px; overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 3px; background: var(--series-1); width: 0%; }
+
+  svg { display: block; }
+  svg text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; display: none; z-index: 10;
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    white-space: nowrap;
+  }
+
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 13px; }
+  .kv dt { color: var(--text-muted); }
+  .kv dd { color: var(--text-primary); text-align: right; }
+  .placeholder { color: var(--text-muted); font-size: 13px; }
+  .proof-ok { color: var(--success-text); font-size: 13px; margin-top: 8px; display: none; }
+
+  #feed { max-height: 320px; overflow-y: auto; font-size: 12px; }
+  #feed .row { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--gridline); }
+  #feed .row:last-child { border-bottom: none; }
+  #feed .t { color: var(--text-muted); font-variant-numeric: tabular-nums; flex: 0 0 40px; }
+  #feed .ev { color: var(--text-secondary); font-weight: 600; flex: 0 0 auto; }
+  #feed .detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body class="viz-root">
+  <header>
+    <h1>Ice Signal</h1>
+    <span class="clock" id="clock">0:00</span>
+    <span class="status" id="status"><span class="dot"></span><span id="statusText">waiting for engine…</span></span>
+  </header>
+
+  <div class="grid">
+    <div class="col">
+      <div class="tiles">
+        <div class="tile">
+          <div class="label">Speech share</div>
+          <div class="value hero" id="tileShare">0%</div>
+          <div class="meter"><div id="shareMeter"></div></div>
+        </div>
+        <div class="tile">
+          <div class="label">Utterances</div>
+          <div class="value" id="tileUtt">0</div>
+          <div class="sub" id="tilePace">0.0 / min</div>
+        </div>
+        <div class="tile">
+          <div class="label">Longest lull</div>
+          <div class="value" id="tileLull">0.0s</div>
+          <div class="sub" id="tilePauses">0 long pauses</div>
+        </div>
+        <div class="tile">
+          <div class="label">Energy</div>
+          <div class="value" id="tileEnergy">—</div>
+          <div class="sub" id="tileDb">no reading yet</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Voice activity</h2>
+        <svg id="timeline" height="64"></svg>
+      </div>
+
+      <div class="panel">
+        <h2>Energy level (dBFS)</h2>
+        <svg id="energy" height="120"></svg>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <h2>Conversation card</h2>
+        <div id="card"><div class="placeholder">Appears when the session ends.</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Privacy proof</h2>
+        <dl class="kv">
+          <dt>Audio persisted</dt><dd>0 bytes</dd>
+          <dt>Words transcribed</dt><dd>0</dd>
+          <dt>Samples discarded</dt><dd id="pvSamples">counting…</dd>
+          <dt>Frames processed</dt><dd id="pvFrames">counting…</dd>
+        </dl>
+        <div class="proof-ok" id="proofOk">✓ Privacy summary received from engine</div>
+      </div>
+
+      <div class="panel">
+        <h2>Event stream</h2>
+        <div id="feed"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tooltip"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const WS_PORT = 9715;
+
+let state, lastEventWall = 0, connected = false;
+function reset() {
+  state = { spans: [], open: null, energy: [], longPauses: 0,
+            lastT: 0, analytics: null, privacy: null, ended: false };
+}
+reset();
+
+/* ---------- event intake ---------- */
+function onEvent(e) {
+  if (e.event === "SESSION_START") reset();
+  if (typeof e.t === "number") state.lastT = Math.max(state.lastT, e.t);
+  lastEventWall = Date.now();
+  switch (e.event) {
+    case "SPEAKING_START": state.open = e.t; break;
+    case "SPEAKING_STOP":
+      if (state.open !== null) { state.spans.push([state.open, e.utterance_ms]); state.open = null; }
+      break;
+    case "LONG_PAUSE": state.longPauses++; break;
+    case "ENERGY_LEVEL": state.energy.push([e.t, e.dbfs, e.band]); break;
+    case "SESSION_ANALYTICS": state.analytics = e; break;
+    case "PRIVACY_SUMMARY": state.privacy = e; break;
+    case "SESSION_END": state.ended = true; break;
+  }
+  addFeedRow(e);
+  render();
+}
+
+/* ---------- derived stats (mirrors engine analytics definitions) ---------- */
+function stats() {
+  const dur = Math.max(state.lastT, 1);
+  const openMs = state.open !== null ? Math.max(0, state.lastT - state.open) : 0;
+  const speech = state.spans.reduce((s, [, d]) => s + d, 0) + openMs;
+  const utterances = state.spans.length + (state.open !== null ? 1 : 0);
+  let lull = 0, cursor = 0;
+  for (const [start, d] of state.spans) {
+    lull = Math.max(lull, start - cursor);
+    cursor = Math.max(cursor, start + d);
+  }
+  if (state.open === null) lull = Math.max(lull, state.lastT - cursor);
+  return { dur, speech, share: speech / dur, utterances,
+           pace: utterances * 60000 / dur, lull };
+}
+
+/* ---------- rendering ---------- */
+const fmtT = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms % 60000 / 1000)).padStart(2, "0")}`;
+const PAD = 18; // horizontal plot inset so edge tick labels never clip
+
+function render() {
+  const s = stats();
+  $("tileShare").textContent = `${Math.round(s.share * 100)}%`;
+  $("shareMeter").style.width = `${Math.min(100, s.share * 100)}%`;
+  $("tileUtt").textContent = s.utterances;
+  $("tilePace").textContent = `${s.pace.toFixed(1)} / min`;
+  $("tileLull").textContent = `${(s.lull / 1000).toFixed(1)}s`;
+  $("tilePauses").textContent = `${state.longPauses} long pause${state.longPauses === 1 ? "" : "s"}`;
+  const last = state.energy[state.energy.length - 1];
+  if (last) {
+    $("tileEnergy").textContent = last[2];
+    $("tileDb").textContent = `${last[1].toFixed(1)} dBFS`;
+  }
+  renderTimeline(s);
+  renderEnergy();
+  renderCard();
+  renderPrivacy();
+  renderStatus();
+}
+
+function tickStep(dur) {
+  for (const s of [5e3, 10e3, 15e3, 30e3, 60e3, 12e4, 3e5, 6e5, 18e5])
+    if (dur / s <= 8) return s;
+  return 36e5;
+}
+
+function renderTimeline(s) {
+  const svg = $("timeline");
+  const w = svg.parentElement.clientWidth - 32, h = 64;
+  svg.setAttribute("width", w);
+  const dur = Math.max(s.dur, 30000);
+  const x = t => PAD + t / dur * (w - 2 * PAD);
+  let out = `<line x1="0" y1="46" x2="${w}" y2="46" stroke="var(--baseline)" stroke-width="1"/>`;
+  const step = tickStep(dur);
+  for (let t = 0; t <= dur; t += step) {
+    out += `<line x1="${x(t)}" y1="46" x2="${x(t)}" y2="50" stroke="var(--baseline)" stroke-width="1"/>` +
+           `<text x="${x(t)}" y="62" text-anchor="middle">${fmtT(t)}</text>`;
+  }
+  const spans = state.spans.slice();
+  if (state.open !== null) spans.push([state.open, Math.max(0, state.lastT - state.open)]);
+  for (const [start, d] of spans) {
+    const bw = Math.max(3, x(d));
+    out += `<rect class="span" x="${x(start)}" y="22" width="${bw}" height="16" rx="3"
+             fill="var(--series-1)" data-tip="${fmtT(start)} · ${(d / 1000).toFixed(1)}s"/>`;
+  }
+  svg.innerHTML = out;
+}
+
+function renderEnergy() {
+  const svg = $("energy");
+  const w = svg.parentElement.clientWidth - 32, h = 120, top = 6, bottom = 18;
+  svg.setAttribute("width", w);
+  const dur = Math.max(state.lastT, 30000);
+  const [dbMin, dbMax] = [-70, -15];
+  const x = t => PAD + t / dur * (w - 2 * PAD);
+  const y = db => top + (dbMax - Math.min(dbMax, Math.max(dbMin, db))) / (dbMax - dbMin) * (h - top - bottom);
+  let out = "";
+  for (const g of [-30, -50]) {
+    out += `<line x1="0" y1="${y(g)}" x2="${w}" y2="${y(g)}" stroke="var(--gridline)" stroke-width="1"/>` +
+           `<text x="0" y="${y(g) - 3}">${g}</text>`;
+  }
+  out += `<line x1="0" y1="${h - bottom}" x2="${w}" y2="${h - bottom}" stroke="var(--baseline)" stroke-width="1"/>`;
+  if (state.energy.length) {
+    const pts = state.energy.map(([t, db]) => [x(t), y(db)]);
+    const path = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
+    out += `<path d="${path}L${pts[pts.length - 1][0].toFixed(1)},${h - bottom}L${pts[0][0].toFixed(1)},${h - bottom}Z"
+             fill="var(--series-1)" opacity="0.1"/>`;
+    out += `<path d="${path}" fill="none" stroke="var(--series-1)" stroke-width="2"
+             stroke-linejoin="round" stroke-linecap="round"/>`;
+    const [ex, ey] = pts[pts.length - 1];
+    out += `<circle cx="${ex}" cy="${ey}" r="6" fill="var(--surface-1)"/>` +
+           `<circle cx="${ex}" cy="${ey}" r="4" fill="var(--series-1)"/>`;
+    out += `<line id="crosshair" y1="${top}" y2="${h - bottom}" stroke="var(--baseline)" stroke-width="1" visibility="hidden"/>`;
+  }
+  svg.innerHTML = out;
+}
+
+function renderCard() {
+  const a = state.analytics;
+  if (!a) return;
+  $("card").innerHTML = `<dl class="kv">
+    <dt>Duration</dt><dd>${fmtT(a.duration_ms)}</dd>
+    <dt>Speech</dt><dd>${Math.round(a.speech_ratio * 100)}% · ${a.utterances} utterances</dd>
+    <dt>Pace</dt><dd>${a.utterances_per_min.toFixed(1)} / min</dd>
+    <dt>Longest lull</dt><dd>${(a.longest_lull_ms / 1000).toFixed(1)}s · ${a.long_pauses} long pauses</dd>
+    <dt>Energy</dt><dd>${a.avg_dbfs.toFixed(1)} dBFS · ${a.energy_trend.toLowerCase()}</dd>
+    <dt>Momentum</dt><dd>${a.momentum.toLowerCase()}</dd>
+  </dl>`;
+}
+
+function renderPrivacy() {
+  const p = state.privacy;
+  $("pvSamples").textContent = p ? p.audio_samples_discarded.toLocaleString() : "counting…";
+  $("pvFrames").textContent = p ? p.frames_processed.toLocaleString() : "counting…";
+  $("proofOk").style.display = p ? "block" : "none";
+}
+
+function renderStatus() {
+  const el = $("status"), txt = $("statusText");
+  if (state.ended) { el.className = "status"; txt.textContent = "■ session ended"; }
+  else if (connected) { el.className = "status live"; txt.textContent = "live"; }
+  else { el.className = "status"; txt.textContent = "waiting for engine…"; }
+}
+
+/* ---------- event feed ---------- */
+function addFeedRow(e) {
+  const detail = Object.entries(e)
+    .filter(([k]) => k !== "t" && k !== "event")
+    .map(([k, v]) => `${k}=${v}`).join(" ");
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<span class="t">${fmtT(e.t || 0)}</span><span class="ev">${e.event}</span><span class="detail">${detail}</span>`;
+  const feed = $("feed");
+  feed.prepend(row);
+  while (feed.childElementCount > 200) feed.lastElementChild.remove();
+}
+
+/* ---------- tooltip (spans + energy hover) ---------- */
+const tooltip = $("tooltip");
+function showTip(text, ev) {
+  tooltip.textContent = text;
+  tooltip.style.display = "block";
+  tooltip.style.left = `${ev.clientX + 12}px`;
+  tooltip.style.top = `${ev.clientY - 10}px`;
+}
+document.addEventListener("mousemove", ev => {
+  const target = ev.target.closest?.("rect.span");
+  if (target) return showTip(target.dataset.tip, ev);
+  if (ev.target.closest?.("#energy") && state.energy.length) {
+    const svg = $("energy"), rect = svg.getBoundingClientRect();
+    const dur = Math.max(state.lastT, 30000);
+    const t = (ev.clientX - rect.left - PAD) / (rect.width - 2 * PAD) * dur;
+    let best = state.energy[0];
+    for (const p of state.energy) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    const cross = svg.querySelector("#crosshair");
+    if (cross) {
+      const cx = PAD + best[0] / dur * (rect.width - 2 * PAD);
+      cross.setAttribute("x1", cx);
+      cross.setAttribute("x2", cx);
+      cross.setAttribute("visibility", "visible");
+    }
+    return showTip(`${best[1].toFixed(1)} dBFS · ${best[2]} · ${fmtT(best[0])}`, ev);
+  }
+  tooltip.style.display = "none";
+  const cross = document.querySelector("#crosshair");
+  if (cross) cross.setAttribute("visibility", "hidden");
+});
+
+/* ---------- clock ---------- */
+setInterval(() => {
+  const drift = connected && !state.ended && lastEventWall ? Date.now() - lastEventWall : 0;
+  $("clock").textContent = fmtT(state.lastT + Math.min(drift, 5000));
+}, 250);
+
+/* ---------- websocket with reconnect ---------- */
+function connect() {
+  const host = location.hostname || "127.0.0.1";
+  const ws = new WebSocket(`ws://${host}:${WS_PORT}`);
+  ws.onopen = () => { connected = true; renderStatus(); };
+  ws.onmessage = m => { try { onEvent(JSON.parse(m.data)); } catch {} };
+  ws.onclose = () => { connected = false; renderStatus(); setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
+}
+connect();
+window.addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>

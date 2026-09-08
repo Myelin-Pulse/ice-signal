@@ -2,7 +2,9 @@
 //! phone) when the core moves into the FPGA. Floats, allocation, and OS APIs
 //! are all fine here — none of this ports.
 
+pub mod analytics;
 pub mod audio;
 pub mod events;
 pub mod meter;
 pub mod resample;
+pub mod ws;

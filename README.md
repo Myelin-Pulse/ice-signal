@@ -40,6 +40,14 @@ cargo run --release            # JSONL events on stdout, live meter on stderr
 cargo run --release 2>/dev/null  # events only (pipe to jq, a dashboard, …)
 ```
 
+While the engine runs it also serves the live dashboard at
+**http://localhost:9714** (event stream: `ws://localhost:9715`). The page is a
+single self-contained file (`engine/src/host/dashboard.html`, embedded in the
+binary) showing live stat tiles, the voice-activity timeline, the energy chart,
+the event stream, and the privacy proof; the Conversation Card fills in at
+session end. The WS stream carries exactly the JSONL schema events — the
+dashboard sees precisely what the phone app would see, nothing more.
+
 Grant your terminal microphone access when macOS prompts. The meter shows the
 live level, the tracked noise floor, LIF spikes (⚡), and the VAD state; stdout
 streams schema events (`SPEAKING_START`, `ENERGY_LEVEL`, …). Ctrl+C emits
@@ -51,8 +59,8 @@ streams schema events (`SPEAKING_START`, `ENERGY_LEVEL`, …). Ctrl+C emits
 1. ~~**Rust CLI engine** — mic input, 20ms frames, RMS energy, terminal output~~ ✓
 2. ~~**VAD + metadata** — speaking start/stop, silence, long pauses, JSONL event stream~~ ✓ (spiking-neuron VAD in the portable core)
 3. ~~**Privacy proof** — no-audio/no-transcription counters, session privacy summary~~ ✓
-4. **Session analytics** — duration, speech ratio, turn count, energy trend, momentum ← *here*
-5. **Local dashboard** — WebSocket stream, live event feed, energy meter, Conversation Card
-6. **Social signals** — estimated speaking balance, overlap, interruption, follow-up suggestion
+4. ~~**Session analytics** — duration, speech ratio, turn count, energy trend, momentum~~ ✓ (`SESSION_ANALYTICS` event + terminal Conversation Card)
+5. ~~**Local dashboard** — WebSocket stream, live event feed, energy meter, Conversation Card~~ ✓ (served by the engine at `localhost:9714`)
+6. **Social signals** — estimated speaking balance, overlap, interruption, follow-up suggestion ← *here*
 7. **React Native app** — sessions, live signal screen, Conversation Card, Privacy Proof screen
 8. **Event mode** — event tagging, anonymous aggregate analytics, organizer report, pilot-ready demo

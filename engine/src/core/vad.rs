@@ -72,8 +72,11 @@ impl Vad {
                 }
                 if self.frames_since_spike >= HANGOVER_FRAMES {
                     out.speaking_stop = true;
-                    out.utterance_frames =
-                        self.frames_in_state.saturating_sub(self.frames_since_spike);
+                    // At least 1: the starting spike frame itself was voiced.
+                    out.utterance_frames = self
+                        .frames_in_state
+                        .saturating_sub(self.frames_since_spike)
+                        .max(1);
                     self.state = State::Silence;
                     self.frames_in_state = 0;
                 } else {

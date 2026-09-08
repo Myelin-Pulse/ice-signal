@@ -17,7 +17,14 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use crate::core::{Engine, CORE_SAMPLE_RATE, FRAME_MS};
-use crate::host::{events, meter, resample::Resampler};
+use crate::host::{
+    analytics::SessionAnalytics, events, events::Event, meter, resample::Resampler,
+    ws::Broadcaster,
+};
+
+const HTTP_PORT: u16 = 9714;
+const WS_PORT: u16 = 9715;
+static DASHBOARD: &str = include_str!("host/dashboard.html");
 
 fn main() -> Result<()> {
     let running = Arc::new(AtomicBool::new(true));
@@ -34,9 +41,17 @@ fn main() -> Result<()> {
         "ice-engine | device: {} @ {} Hz, {} ch → core @ {CORE_SAMPLE_RATE} Hz, {FRAME_MS}ms frames",
         capture.device_name, capture.sample_rate, capture.channels
     );
-    eprintln!("events: JSONL on stdout | meter: stderr | Ctrl+C to end session\n");
-    println!("{}", events::session_start());
+    let (broadcast, http_port, _) = Broadcaster::start(HTTP_PORT, WS_PORT, DASHBOARD)?;
+    let emit = |line: String| {
+        broadcast.send(&line);
+        println!("{line}");
+    };
 
+    eprintln!("events: JSONL on stdout | meter: stderr | Ctrl+C to end session");
+    eprintln!("dashboard: http://localhost:{http_port}\n");
+    emit(Event::SessionStart.to_json());
+
+    let mut analytics = SessionAnalytics::new();
     let mut device_samples: u64 = 0;
     while running.load(Ordering::SeqCst) {
         // Blocks until the capture callback delivers more mono samples.
@@ -46,20 +61,27 @@ fn main() -> Result<()> {
         for sample in resampler.push(&chunk) {
             let Some(report) = engine.tick(sample) else { continue };
             // `sample` and this frame's audio are gone; only the report remains.
-            for line in events::report_lines(&report) {
-                println!("{line}");
+            for event in events::from_report(&report) {
+                analytics.observe(&event);
+                emit(event.to_json());
             }
             meter::render(&report, device_samples);
         }
     }
 
-    for line in events::session_end(engine.frames_processed(), device_samples) {
-        println!("{line}");
-    }
-
     let duration_ms = engine.frames_processed() * FRAME_MS as u64;
-    eprintln!("\n\nsession summary");
-    eprintln!("  duration:          {:.1}s", duration_ms as f64 / 1000.0);
+    let summary = analytics.finalize(duration_ms);
+    emit(summary.to_json());
+    emit(Event::PrivacySummary {
+        t: duration_ms,
+        frames_processed: engine.frames_processed(),
+        audio_samples_discarded: device_samples,
+    }
+    .to_json());
+    emit(Event::SessionEnd { t: duration_ms }.to_json());
+
+    eprintln!("\n\n{}", summary.card());
+    eprintln!("privacy proof");
     eprintln!("  frames processed:  {}", engine.frames_processed());
     eprintln!(
         "  audio discarded:   {device_samples} samples ({} KiB never stored)",

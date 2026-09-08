@@ -43,6 +43,39 @@ Design rules:
 - `ENERGY_LEVEL` — periodic (e.g. 1s) coarse level,
   `{ "band": "LOW" | "MED" | "HIGH", "dbfs": -32.4 }`
 
+### Session analytics (Week 4)
+
+- `SESSION_ANALYTICS` — emitted once at session end, before `PRIVACY_SUMMARY`:
+
+```json
+{
+  "t": 1834000,
+  "event": "SESSION_ANALYTICS",
+  "duration_ms": 1834000,
+  "speech_ms": 924000,
+  "speech_ratio": 0.50,
+  "utterances": 46,
+  "utterances_per_min": 1.5,
+  "longest_lull_ms": 7500,
+  "long_pauses": 3,
+  "avg_dbfs": -33.4,
+  "energy_trend": "RISING",
+  "momentum": "GAINING"
+}
+```
+
+Definitions (fixed, per the append-only rule):
+
+- *utterance* — one continuous stretch of voiced activity by any speaker.
+  Single channel for now; per-speaker attribution arrives with Week 6.
+- `speech_ratio` — `speech_ms / duration_ms`, 0..1.
+- `longest_lull_ms` — largest gap between utterances, including before the
+  first and after the last.
+- `energy_trend` — mean dBFS of the session's second half vs its first half:
+  `RISING` / `FALLING` beyond ±2 dB, else `STEADY`.
+- `momentum` — speech density of the second half vs the first half:
+  `GAINING` / `FADING` beyond ±0.10, else `STEADY`.
+
 ### Social signals (Week 6)
 
 - `OVERLAP_DETECTED` — simultaneous speech, `{ "overlap_ms": 400 }`
