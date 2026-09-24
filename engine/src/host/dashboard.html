@@ -153,6 +153,19 @@
       </div>
 
       <div class="panel">
+        <h2>Social signals · estimates</h2>
+        <p class="placeholder" id="socialMode">Waiting for input details…</p>
+        <dl class="kv" style="margin-top:10px">
+          <dt>Speaking balance</dt><dd id="socialBalance">—</dd>
+          <dt>Completed turns</dt><dd id="socialTurns">—</dd>
+          <dt>Overlap</dt><dd id="socialOverlap">—</dd>
+          <dt>Possible interruptions</dt><dd id="socialInterruptions">—</dd>
+        </dl>
+        <div class="meter" role="img" id="balanceBar" aria-label="No speaking balance available" hidden><div id="balanceFill"></div></div>
+        <p class="placeholder" style="margin-top:10px" id="socialSuggestion">Suggestions appear as the conversation develops.</p>
+      </div>
+
+      <div class="panel">
         <h2>Voice activity</h2>
         <svg id="timeline" height="64"></svg>
       </div>
@@ -197,16 +210,21 @@ const WS_PORT = 9715;
 let state, lastEventWall = 0, connected = false;
 function reset() {
   state = { spans: [], open: null, energy: [], longPauses: 0,
-            lastT: 0, analytics: null, privacy: null, ended: false };
+            lastT: 0, analytics: null, privacy: null, social: null, config: null, ended: false };
 }
 reset();
 
 /* ---------- event intake ---------- */
 function onEvent(e) {
-  if (e.event === "SESSION_START") reset();
+  if (e.event === "SESSION_START") {
+    reset();
+    $("feed").replaceChildren();
+  }
   if (typeof e.t === "number") state.lastT = Math.max(state.lastT, e.t);
   lastEventWall = Date.now();
   switch (e.event) {
+    case "SOCIAL_CONFIG": state.config = e; break;
+    case "SOCIAL_SIGNALS": state.social = e; break;
     case "SPEAKING_START": state.open = e.t; break;
     case "SPEAKING_STOP":
       if (state.open !== null) { state.spans.push([state.open, e.utterance_ms]); state.open = null; }
@@ -250,13 +268,12 @@ function render() {
   $("tileLull").textContent = `${(s.lull / 1000).toFixed(1)}s`;
   $("tilePauses").textContent = `${state.longPauses} long pause${state.longPauses === 1 ? "" : "s"}`;
   const last = state.energy[state.energy.length - 1];
-  if (last) {
-    $("tileEnergy").textContent = last[2];
-    $("tileDb").textContent = `${last[1].toFixed(1)} dBFS`;
-  }
+  $("tileEnergy").textContent = last ? last[2] : "—";
+  $("tileDb").textContent = last ? `${last[1].toFixed(1)} dBFS` : "no reading yet";
   renderTimeline(s);
   renderEnergy();
   renderCard();
+  renderSocial();
   renderPrivacy();
   renderStatus();
 }
@@ -282,7 +299,7 @@ function renderTimeline(s) {
   const spans = state.spans.slice();
   if (state.open !== null) spans.push([state.open, Math.max(0, state.lastT - state.open)]);
   for (const [start, d] of spans) {
-    const bw = Math.max(3, x(d));
+    const bw = Math.max(3, x(start + d) - x(start));
     out += `<rect class="span" x="${x(start)}" y="22" width="${bw}" height="16" rx="3"
              fill="var(--series-1)" data-tip="${fmtT(start)} · ${(d / 1000).toFixed(1)}s"/>`;
   }
@@ -320,7 +337,10 @@ function renderEnergy() {
 
 function renderCard() {
   const a = state.analytics;
-  if (!a) return;
+  if (!a) {
+    $("card").innerHTML = '<div class="placeholder">Appears when the session ends.</div>';
+    return;
+  }
   $("card").innerHTML = `<dl class="kv">
     <dt>Duration</dt><dd>${fmtT(a.duration_ms)}</dd>
     <dt>Speech</dt><dd>${Math.round(a.speech_ratio * 100)}% · ${a.utterances} utterances</dd>
@@ -329,6 +349,37 @@ function renderCard() {
     <dt>Energy</dt><dd>${a.avg_dbfs.toFixed(1)} dBFS · ${a.energy_trend.toLowerCase()}</dd>
     <dt>Momentum</dt><dd>${a.momentum.toLowerCase()}</dd>
   </dl>`;
+  if (state.social?.final) {
+    const social = state.social;
+    const details = document.createElement("p");
+    details.className = "placeholder";
+    details.style.marginTop = "10px";
+    details.textContent = social.available ?
+      `Estimates: ${social.shares ? `A ${Math.round(social.shares[0] * 100)}% / B ${Math.round(social.shares[1] * 100)}%` : "no attributed speech"} · ${social.turns} turns · ${(social.overlap_ms / 1000).toFixed(1)}s overlap · ${social.interruptions} possible interruptions.` :
+      "Speaking balance, overlap, and interruptions unavailable with mono input.";
+    $("card").append(details);
+    const note = document.createElement("p");
+    note.className = "placeholder";
+    note.style.marginTop = "10px";
+    note.textContent = `Follow-up: ${state.social.suggestion_text}`;
+    $("card").append(note);
+  }
+}
+
+function renderSocial() {
+  const s = state.social, config = state.config;
+  $("socialMode").textContent = !config ? "Waiting for input details…" :
+    config.mode === "MONO" ? "Separate participant channels are required for speaking balance, overlap, and interruption estimates." :
+    `${config.demo ? "Synthetic demo. " : ""}A/B are input channels, not voice identities. Each channel must carry one participant; microphone bleed can distort estimates.`;
+  const shares = s?.available && s.shares;
+  $("socialBalance").textContent = shares ? `A ${Math.round(shares[0] * 100)}% / B ${Math.round(shares[1] * 100)}%` : "Unavailable";
+  $("balanceBar").hidden = !shares;
+  $("balanceBar").setAttribute("aria-label", shares ? $("socialBalance").textContent : "No speaking balance available");
+  $("balanceFill").style.width = shares ? `${shares[0] * 100}%` : "0%";
+  $("socialTurns").textContent = s?.available ? s.turns : "—";
+  $("socialOverlap").textContent = s?.available ? `${(s.overlap_ms / 1000).toFixed(1)}s · ${s.overlaps} episodes` : "—";
+  $("socialInterruptions").textContent = s?.available ? s.interruptions : "—";
+  $("socialSuggestion").textContent = s ? s.suggestion_text : "Suggestions appear as the conversation develops.";
 }
 
 function renderPrivacy() {
@@ -352,7 +403,12 @@ function addFeedRow(e) {
     .map(([k, v]) => `${k}=${v}`).join(" ");
   const row = document.createElement("div");
   row.className = "row";
-  row.innerHTML = `<span class="t">${fmtT(e.t || 0)}</span><span class="ev">${e.event}</span><span class="detail">${detail}</span>`;
+  for (const [cls, text] of [["t", fmtT(e.t || 0)], ["ev", e.event], ["detail", detail]]) {
+    const span = document.createElement("span");
+    span.className = cls;
+    span.textContent = text;
+    row.append(span);
+  }
   const feed = $("feed");
   feed.prepend(row);
   while (feed.childElementCount > 200) feed.lastElementChild.remove();
