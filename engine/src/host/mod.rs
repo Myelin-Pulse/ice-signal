@@ -4,7 +4,10 @@
 
 pub mod analytics;
 pub mod audio;
+pub mod demo;
 pub mod events;
 pub mod meter;
 pub mod resample;
+pub mod session;
+pub mod social;
 pub mod ws;

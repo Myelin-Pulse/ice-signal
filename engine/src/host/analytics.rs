@@ -4,7 +4,7 @@
 //!
 //! Definitions (kept in docs/event-schema.md):
 //!   - utterance: one continuous stretch of voiced activity, any speaker
-//!     (single channel — speaker attribution lands in Week 6)
+//!     (mixed channel; separate-channel social estimates live in social.rs)
 //!   - energy trend: mean dBFS of the second half vs the first half, ±2 dB
 //!   - momentum: speech density of the second half vs the first half, ±0.10
 
@@ -74,7 +74,11 @@ impl SessionAnalytics {
         // Momentum: speech density, second half vs first half.
         let mid = duration_ms / 2;
         let first: u64 = self.spans.iter().map(|&s| overlap(s, 0, mid)).sum();
-        let second: u64 = self.spans.iter().map(|&s| overlap(s, mid, duration_ms)).sum();
+        let second: u64 = self
+            .spans
+            .iter()
+            .map(|&s| overlap(s, mid, duration_ms))
+            .sum();
         let momentum = if mid == 0 {
             "STEADY"
         } else {
@@ -132,7 +136,11 @@ fn overlap((start, dur): (u64, u64), a: u64, b: u64) -> u64 {
 
 fn mean(values: impl Iterator<Item = f32>) -> f32 {
     let (sum, n) = values.fold((0.0f32, 0u32), |(s, n), v| (s + v, n + 1));
-    if n == 0 { 0.0 } else { sum / n as f32 }
+    if n == 0 {
+        0.0
+    } else {
+        sum / n as f32
+    }
 }
 
 pub struct Summary {
@@ -168,7 +176,11 @@ impl Summary {
 
     /// Human-readable Conversation Card for the terminal (stderr).
     pub fn card(&self) -> String {
-        let dur = format!("{}m {:02}s", self.duration_ms / 60_000, self.duration_ms % 60_000 / 1000);
+        let dur = format!(
+            "{}m {:02}s",
+            self.duration_ms / 60_000,
+            self.duration_ms % 60_000 / 1000
+        );
         let lull = self.longest_lull_ms as f64 / 1000.0;
         format!(
             "──── conversation card ─────────────────────\n\
@@ -196,7 +208,10 @@ mod tests {
 
     fn utterance(a: &mut SessionAnalytics, start: u64, dur: u64) {
         a.observe(&Event::SpeakingStart { t: start });
-        a.observe(&Event::SpeakingStop { t: start + dur + 400, utterance_ms: dur });
+        a.observe(&Event::SpeakingStop {
+            t: start + dur + 400,
+            utterance_ms: dur,
+        });
     }
 
     #[test]
@@ -204,7 +219,10 @@ mod tests {
         let mut a = SessionAnalytics::new();
         utterance(&mut a, 2_000, 2_500); // ends 4 500
         utterance(&mut a, 12_000, 2_500); // ends 14 500
-        a.observe(&Event::LongPause { t: 9_000, pause_ms: 4_000 });
+        a.observe(&Event::LongPause {
+            t: 9_000,
+            pause_ms: 4_000,
+        });
         let s = a.finalize(20_000);
 
         assert_eq!(s.utterances, 2);
@@ -237,8 +255,17 @@ mod tests {
     #[test]
     fn energy_trend_rises_with_louder_second_half() {
         let mut a = SessionAnalytics::new();
-        for (t, dbfs) in [(1_000, -40.0), (3_000, -38.0), (5_000, -33.0), (7_000, -31.0)] {
-            a.observe(&Event::EnergyLevel { t, band: Band::Med, dbfs });
+        for (t, dbfs) in [
+            (1_000, -40.0),
+            (3_000, -38.0),
+            (5_000, -33.0),
+            (7_000, -31.0),
+        ] {
+            a.observe(&Event::EnergyLevel {
+                t,
+                band: Band::Med,
+                dbfs,
+            });
         }
         let s = a.finalize(8_000);
         assert_eq!(s.energy_trend, "RISING");
