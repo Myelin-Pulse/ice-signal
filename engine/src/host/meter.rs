@@ -12,7 +12,11 @@ pub fn render(r: &FrameReport, device_samples_discarded: u64) {
     // Map -60..0 dBFS onto the bar.
     let fill = (((level + 60.0) / 60.0).clamp(0.0, 1.0) * WIDTH as f32) as usize;
     let bar: String = "#".repeat(fill) + &"-".repeat(WIDTH - fill);
-    let state = if r.vad_active { "▌speaking" } else { "  silent " };
+    let state = if r.vad_active {
+        "▌speaking"
+    } else {
+        "  silent "
+    };
     let spike = if r.spike { "⚡" } else { " " };
     eprint!(
         "\r[{bar}] {level:>6.1} dBFS {spike}{state} | floor: {:>6.1} | discarded: {} KiB ",

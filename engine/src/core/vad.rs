@@ -117,7 +117,9 @@ mod tests {
     #[test]
     fn silence_and_long_pause_strobe_once_each() {
         let mut vad = Vad::new();
-        let outs: Vec<VadOutput> = (0..LONG_PAUSE_FRAMES + 50).map(|_| vad.step(false)).collect();
+        let outs: Vec<VadOutput> = (0..LONG_PAUSE_FRAMES + 50)
+            .map(|_| vad.step(false))
+            .collect();
         assert_eq!(outs.iter().filter(|o| o.silence).count(), 1);
         assert_eq!(outs.iter().filter(|o| o.long_pause).count(), 1);
         assert!(outs[SILENCE_FRAMES as usize - 1].silence);

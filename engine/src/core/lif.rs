@@ -21,7 +21,11 @@ pub struct LifNeuron {
 
 impl LifNeuron {
     pub fn new(leak_shift: u32, threshold: u32) -> Self {
-        Self { potential: 0, leak_shift, threshold }
+        Self {
+            potential: 0,
+            leak_shift,
+            threshold,
+        }
     }
 
     /// Tuning for the speech-onset neuron. Equilibrium potential is
@@ -35,7 +39,9 @@ impl LifNeuron {
     /// The leak drains at least 1 so the potential reaches exactly zero
     /// instead of parking below the shift resolution.
     pub fn step(&mut self, input: u32) -> bool {
-        let leak = (self.potential >> self.leak_shift).max(1).min(self.potential);
+        let leak = (self.potential >> self.leak_shift)
+            .max(1)
+            .min(self.potential);
         self.potential -= leak;
         self.potential = self.potential.saturating_add(input);
         if self.potential >= self.threshold {

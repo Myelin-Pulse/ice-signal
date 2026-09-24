@@ -13,7 +13,10 @@ pub struct EnergyAccumulator {
 
 impl EnergyAccumulator {
     pub fn new() -> Self {
-        Self { sum_sq: 0, count: 0 }
+        Self {
+            sum_sq: 0,
+            count: 0,
+        }
     }
 
     /// Accumulate one sample. Returns the frame's sum of squares when this

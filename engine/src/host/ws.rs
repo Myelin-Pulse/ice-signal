@@ -34,7 +34,10 @@ impl Broadcaster {
         let ws = TcpListener::bind(("127.0.0.1", ws_port))?;
         let bound = (http.local_addr()?.port(), ws.local_addr()?.port());
 
-        let shared = Arc::new(Mutex::new(Shared { clients: Vec::new(), history: Vec::new() }));
+        let shared = Arc::new(Mutex::new(Shared {
+            clients: Vec::new(),
+            history: Vec::new(),
+        }));
         thread::spawn(move || serve_http(http, page));
         let accept_shared = shared.clone();
         thread::spawn(move || accept_ws(ws, accept_shared));
@@ -46,7 +49,9 @@ impl Broadcaster {
     pub fn send(&self, line: &str) {
         let mut shared = self.shared.lock().unwrap();
         shared.history.push(line.to_string());
-        shared.clients.retain(|tx| tx.send(line.to_string()).is_ok());
+        shared
+            .clients
+            .retain(|tx| tx.send(line.to_string()).is_ok());
     }
 }
 
@@ -72,7 +77,9 @@ fn accept_ws(listener: TcpListener, shared: Arc<Mutex<Shared>>) {
     for stream in listener.incoming().flatten() {
         let shared = shared.clone();
         thread::spawn(move || {
-            let Ok(mut socket) = tungstenite::accept(stream) else { return };
+            let Ok(mut socket) = tungstenite::accept(stream) else {
+                return;
+            };
             let (tx, rx) = mpsc::channel::<String>();
             // Replay + register under one lock: an event lands either in the
             // replayed history or in the channel, exactly once, in order.
@@ -102,7 +109,8 @@ mod tests {
     fn serves_the_dashboard_page() {
         let (_b, http_port, _) = Broadcaster::start(0, 0, "<html>ice</html>").unwrap();
         let mut conn = TcpStream::connect(("127.0.0.1", http_port)).unwrap();
-        conn.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();
+        conn.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
         let mut response = String::new();
         conn.read_to_string(&mut response).unwrap();
         assert!(response.starts_with("HTTP/1.1 200 OK"));
@@ -118,8 +126,14 @@ mod tests {
         b.send(r#"{"t":280,"event":"SPEAKING_START"}"#);
 
         let first = client.read().unwrap();
-        assert_eq!(first.to_text().unwrap(), r#"{"t":0,"event":"SESSION_START"}"#);
+        assert_eq!(
+            first.to_text().unwrap(),
+            r#"{"t":0,"event":"SESSION_START"}"#
+        );
         let second = client.read().unwrap();
-        assert_eq!(second.to_text().unwrap(), r#"{"t":280,"event":"SPEAKING_START"}"#);
+        assert_eq!(
+            second.to_text().unwrap(),
+            r#"{"t":280,"event":"SPEAKING_START"}"#
+        );
     }
 }

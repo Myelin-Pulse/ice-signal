@@ -19,9 +19,9 @@ pub const CORE_SAMPLE_RATE: u32 = 16_000;
 pub const FRAME_MS: u32 = 20;
 pub const FRAME_LEN: u32 = CORE_SAMPLE_RATE * FRAME_MS / 1000; // 320 samples
 
-/// `frame_power` unit: per-frame sum of squares of i16 samples, >> 8.
-/// The shift approximates dividing by FRAME_LEN (320) without a divider;
-/// the constant ~1.25x factor is baked into every threshold below.
+// `frame_power` unit: per-frame sum of squares of i16 samples, >> 8.
+// The shift approximates dividing by FRAME_LEN (320) without a divider;
+// the constant ~1.25x factor is baked into every threshold below.
 
 /// Energy-level report cadence: power of two so the average is a shift.
 pub const ENERGY_WINDOW_FRAMES: u32 = 64; // 1.28 s
@@ -202,7 +202,10 @@ mod tests {
         reports.extend(feed(&mut engine, loud(50)));
         reports.extend(feed(&mut engine, quiet(250)));
 
-        let start = reports.iter().position(|r| r.speaking_start).expect("start");
+        let start = reports
+            .iter()
+            .position(|r| r.speaking_start)
+            .expect("start");
         assert!((50..60).contains(&start), "onset at frame {start}");
 
         let stop = reports.iter().find(|r| r.speaking_stop).expect("stop");
